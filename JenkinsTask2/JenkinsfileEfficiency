@@ -1,0 +1,49 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_REPO = 'ekenoglucan/nginx-jenkins-task'
+        LOWEST_EFFICIENCY = '0.7'
+        HIGHEST_USER_WASTED_PERCENT = '0.2'
+        HIGHEST_WASTED_BYTES = '100000000'
+    }
+
+    parameters {
+        string(name: 'PREVIOUS_BUILD_NUMBER', description: 'Build number from the previous pipeline') // docker tag olarak isimlendirebilirsin
+    }
+
+    stages {
+        stage('Pull Tagged Docker Image') {
+            steps {
+                script {
+                    def buildNumber = params.PREVIOUS_BUILD_NUMBER
+                    def taggedImage = "${DOCKER_REPO}:${buildNumber}"
+                    sh "docker pull ${taggedImage}"
+                }
+            }
+        }
+
+        stage('Analyze Tagged Docker Image with Dive') {
+            steps {
+                script {
+                    def buildNumber = params.PREVIOUS_BUILD_NUMBER
+                    def taggedImage = "${DOCKER_REPO}:${buildNumber}"
+
+                    // Define Dive command with environment variables
+                    def diveCommand = "dive --ci --lowestEfficiency ${LOWEST_EFFICIENCY} --highestUserWastedPercent ${HIGHEST_USER_WASTED_PERCENT} --highestWastedBytes ${HIGHEST_WASTED_BYTES} ${taggedImage}"
+
+                    // Run Dive command
+                    def status = sh(script: diveCommand, returnStatus: true)
+
+                    // Check for inefficiencies in the Dive output
+		            def SUCCESS = 0
+                    if (status == SUCCESS) {
+                        echo "Dive analysis completed successfully for ${taggedImage}."
+                    } else {
+                        error("Dive found inefficiencies in the tagged Docker image (${taggedImage}).")
+                    }
+                }
+            } // CLEAN UP STAGE
+        }
+    }
+}

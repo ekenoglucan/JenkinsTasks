@@ -1,0 +1,72 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_REPO = 'ekenoglucan/nginx-jenkins-task'
+    }
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                script {
+                    // Clone your repository
+                    git branch: 'master',  // checkout fonksiyonu
+                        url: "https://github.com/ekenoglucan/nginx-example-demo.git"
+                }
+            }
+        }
+
+        stage('Build & Push Docker Image') {
+            steps {
+                script {
+                    def dockerImageTag = "${DOCKER_REPO}:${env.BUILD_NUMBER}"
+                        
+                    // Authenticate with Docker Hub using the credentials
+                    withCredentials([usernamePassword(credentialsId: 'DOCKER_REGISTRY_CREDENTIALS', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                        sh "docker login --username ${DOCKER_USERNAME} --password ${DOCKER_PASSWORD} docker.io"
+                            
+                        // Build the Docker image
+                        sh "docker build -t ${dockerImageTag} ./nginx-hello"
+                        
+                        // Push the Docker image
+                        sh "docker push ${dockerImageTag}"
+                    }
+                }
+            }
+        }
+
+        stage('Cleanup Old Images') {
+            steps {
+                script {
+                    def baseImageName = "${DOCKER_REPO}:${env.BUILD_NUMBER}"
+    
+                    // Get a list of all Docker images with tags and repositories
+                    def imageList = sh(
+                        script: "docker images --format '{{.Repository}}:{{.Tag}}'",
+                        returnStdout: true
+                    ).trim()
+                    
+                    def imageNameList = imageList.tokenize()
+                    
+                    imageNameList.each { imageInfo ->
+                        if (imageInfo == baseImageName) {
+                            echo "Skipping removal of current image: ${imageInfo}"
+                        } else {
+                            sh "docker rmi ${imageInfo}"
+                        }
+                    }
+                }
+            }
+        }
+        stage('Trigger Second Pipeline') {
+            steps {
+                script {
+                    def buildNumberString = env.BUILD_NUMBER.toString()
+
+                    // Trigger the second pipeline and pass the build number as a parameter
+                    build job: 'docker-image-efficiency-pipeline', parameters: [[$class: 'StringParameterValue', name: 'PREVIOUS_BUILD_NUMBER', value: buildNumberString]] // DOCKER tag olarak geçebilirsin
+                }
+            }
+        }
+    }
+}
